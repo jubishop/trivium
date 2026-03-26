@@ -10,6 +10,8 @@ final class GroupChatLogger {
     private var watchSource: DispatchSourceFileSystemObject?
     private var lastFileOffset: UInt64 = 0
     private var onNewMessage: ((String, String) -> Void)? // (sender, text)
+    // Track messages we wrote so the watcher can skip them
+    private var recentAppWrites: Set<String> = []
 
     init() {
         let tmpDir = NSTemporaryDirectory() + "trivium/"
@@ -40,6 +42,9 @@ final class GroupChatLogger {
               let line = String(data: data, encoding: .utf8) else { return }
 
         let lineData = (line + "\n").data(using: .utf8)!
+
+        // Remember this line so the file watcher skips it
+        recentAppWrites.insert(line)
 
         let fd = open(chatLogPath, O_WRONLY | O_APPEND | O_CREAT, 0o644)
         guard fd >= 0 else { return }
@@ -140,17 +145,18 @@ final class GroupChatLogger {
         let lines = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
 
         for line in lines {
+            // Skip lines the app itself wrote
+            if recentAppWrites.remove(line) != nil {
+                continue
+            }
+
             guard let jsonData = line.data(using: .utf8),
                   let entry = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
                   let sender = entry["sender"] as? String,
                   let msgText = entry["text"] as? String else { continue }
 
-            // Skip messages we wrote ourselves (User or known agent names from the app)
-            // The MCP server writes with sender "agent" -- those are the external ones
-            if sender == "agent" || sender.hasPrefix("agent:") {
-                DispatchQueue.main.async { [weak self] in
-                    self?.onNewMessage?(sender, msgText)
-                }
+            DispatchQueue.main.async { [weak self] in
+                self?.onNewMessage?(sender, msgText)
             }
         }
     }

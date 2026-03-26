@@ -43,8 +43,15 @@ struct TriviumApp: App {
 
     private func startFileWatcher() {
         appState.groupChatLogger.startWatching { sender, text in
-            // Message written to the JSONL by an agent via MCP send_to_group_chat
-            let message = Message(sender: .user, text: "[\(sender)] \(text)")
+            // Message from an agent via MCP send_to_group_chat
+            let msgSender: MessageSender
+            if let agent = appState.agent(named: sender) {
+                msgSender = .agent(agent.id)
+            } else {
+                // Unknown sender -- show with name prefix
+                msgSender = .user
+            }
+            let message = Message(sender: msgSender, text: msgSender.isUser ? "[\(sender)] \(text)" : text)
             appState.chatRoom.append(message)
         }
     }

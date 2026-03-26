@@ -90,7 +90,7 @@ func handleToolsList(id: Int?) {
             ],
             [
                 "name": "send_to_group_chat",
-                "description": "Post a message to the Trivium group chat that all agents and the user can see.",
+                "description": "Post a message to the Trivium group chat that all agents and the user can see. You MUST include your_name so the message is attributed to you.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
@@ -98,8 +98,12 @@ func handleToolsList(id: Int?) {
                             "type": "string",
                             "description": "The message to post to the group chat",
                         ],
+                        "your_name": [
+                            "type": "string",
+                            "description": "Your name (e.g. 'Claude' or 'Codex') so the message shows as coming from you",
+                        ],
                     ],
-                    "required": ["message"],
+                    "required": ["message", "your_name"],
                 ],
             ],
         ] as [[String: Any]],
@@ -126,7 +130,8 @@ func handleToolCall(id: Int?, params: [String: Any]?) {
 
     case "send_to_group_chat":
         if let message = args["message"] as? String {
-            appendToChatLog(sender: "agent", text: message)
+            let senderName = (args["your_name"] as? String) ?? "agent"
+            appendToChatLog(sender: senderName, text: message)
             respond(id: id, result: [
                 "content": [["type": "text", "text": "Message posted to group chat."]],
             ])

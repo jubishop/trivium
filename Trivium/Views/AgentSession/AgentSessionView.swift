@@ -19,7 +19,7 @@ struct AgentSessionView: View {
                     executable: agent.type.executablePath,
                     args: agent.type.interactiveArgs(logger: appState.groupChatLogger),
                     environment: nil,
-                    workingDirectory: NSHomeDirectory(),
+                    workingDirectory: agent.type.defaultWorkingDirectory,
                     isActive: isActive,
                     onProcessTerminated: { _ in
                         Task { @MainActor in

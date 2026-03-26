@@ -34,6 +34,11 @@ enum AgentType: String, Sendable, Codable, CaseIterable, Identifiable {
         }
     }
 
+    // Both agents run from the trivium repo so they can see/edit project files
+    var defaultWorkingDirectory: String {
+        NSHomeDirectory() + "/Desktop/trivium"
+    }
+
     func interactiveArgs(logger: GroupChatLogger?) -> [String] {
         switch self {
         case .claude:
