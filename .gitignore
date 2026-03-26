@@ -1,0 +1,9 @@
+xcuserdata/
+.build/
+DerivedData/
+*.xcscmblueprint
+*.moved-aside
+.DS_Store
+*.ips
+*.swp
+*~
