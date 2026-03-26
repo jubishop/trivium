@@ -1,5 +1,14 @@
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+#!/usr/bin/env bash
+set -euo pipefail
 
-xcodebuild -project "$PROJECT_DIR/Trivium.xcodeproj" -scheme Trivium -configuration Debug -destination 'platform=macOS' build 2>&1 | tail -1
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+CONFIGURATION="${CONFIGURATION:-Debug}"
+
+cd "$REPO_ROOT"
+xcodebuild \
+    -project "$REPO_ROOT/Trivium.xcodeproj" \
+    -scheme Trivium \
+    -configuration "$CONFIGURATION" \
+    -destination 'platform=macOS' \
+    build 2>&1 | tail -1

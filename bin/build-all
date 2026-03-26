@@ -1,9 +1,10 @@
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "Building MCP server..."
-swiftc -o "$PROJECT_DIR/trivium-mcp-server" "$PROJECT_DIR/trivium-mcp-server.swift" && echo "** MCP SERVER BUILD SUCCEEDED **" || exit 1
-echo ""
+"$SCRIPT_DIR/build-mcp"
+echo
 echo "Building app..."
-xcodebuild -project "$PROJECT_DIR/Trivium.xcodeproj" -scheme Trivium -configuration Debug -destination 'platform=macOS' build 2>&1 | tail -1
+"$SCRIPT_DIR/build-app"

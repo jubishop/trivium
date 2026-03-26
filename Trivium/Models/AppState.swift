@@ -19,6 +19,7 @@ final class AppState {
         agents.append(agent)
         let coordinator = AgentCoordinator(config: agent)
         coordinator.workingDirectory = directory
+        coordinator.loadSessionID()
         coordinators[agent.id] = coordinator
         return agent
     }

@@ -98,7 +98,13 @@ final class ClaudeService: AgentService, @unchecked Sendable {
                         guard let event = json["event"] as? [String: Any],
                               let eventType = event["type"] as? String else { continue }
 
-                        if eventType == "content_block_delta",
+                        if eventType == "content_block_start" {
+                            // New text block after a tool use -- add separation
+                            if !fullText.isEmpty {
+                                fullText += "\n\n"
+                                continuation.yield(.textDelta("\n\n"))
+                            }
+                        } else if eventType == "content_block_delta",
                            let delta = event["delta"] as? [String: Any],
                            let deltaType = delta["type"] as? String, deltaType == "text_delta",
                            let text = delta["text"] as? String {

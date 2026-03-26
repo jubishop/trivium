@@ -12,14 +12,17 @@ final class GroupChatLogger {
 
     init(directory: String) {
         self.directory = (directory as NSString).standardizingPath
-        // Stable hex hash of the directory path for the log folder name
-        let hashValue = self.directory.utf8.reduce(into: UInt64(5381)) { hash, byte in
-            hash = hash &* 33 &+ UInt64(byte)
-        }
-        let hash = String(hashValue, radix: 16)
-        let logDir = "/tmp/trivium/chats/\(hash)"
+        let logDir = Self.chatLogDir(for: self.directory)
         try? FileManager.default.createDirectory(atPath: logDir, withIntermediateDirectories: true)
         chatLogPath = logDir + "/group-chat.jsonl"
+    }
+
+    static func chatLogDir(for directory: String) -> String {
+        let normalized = (directory as NSString).standardizingPath
+        let hashValue = normalized.utf8.reduce(into: UInt64(5381)) { hash, byte in
+            hash = hash &* 33 &+ UInt64(byte)
+        }
+        return "/tmp/trivium/chats/\(String(hashValue, radix: 16))"
     }
 
     func appendMessage(sender: String, text: String) {
