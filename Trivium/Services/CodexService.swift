@@ -12,6 +12,7 @@ final class CodexService: AgentService, @unchecked Sendable {
         return AsyncStream { continuation in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: Self.binaryPath)
+            process.environment = AgentType.processEnvironment
 
             var args: [String]
 
@@ -97,29 +98,16 @@ final class CodexService: AgentService, @unchecked Sendable {
                         guard let item = json["item"] as? [String: Any],
                               let itemType = item["type"] as? String else { continue }
 
-                        switch itemType {
-                        case "agent_message":
-                            if let text = item["text"] as? String {
-                                fullText += (fullText.isEmpty ? "" : "\n\n") + text
-                                continuation.yield(.textDelta(text))
-                            }
-
-                        case "command_execution":
-                            if let command = item["command"] as? String,
-                               let output = item["aggregated_output"] as? String {
-                                let exitCode = item["exit_code"] as? Int ?? -1
-                                let formatted = "$ \(command)\n\(output)"
-                                    + (exitCode != 0 ? "\n[exit code: \(exitCode)]" : "")
-                                fullText += (fullText.isEmpty ? "" : "\n\n") + formatted
-                                continuation.yield(.textDelta(formatted))
-                            }
-
-                        default:
-                            break
+                        // Only surface final agent messages, not command executions
+                        // or intermediate thinking
+                        if itemType == "agent_message",
+                           let text = item["text"] as? String {
+                            fullText = text
                         }
 
                     case "turn.completed":
                         if !fullText.isEmpty {
+                            continuation.yield(.textDelta(fullText))
                             continuation.yield(.textComplete(fullText))
                         }
 

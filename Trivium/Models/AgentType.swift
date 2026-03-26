@@ -34,33 +34,8 @@ enum AgentType: String, Sendable, Codable, CaseIterable, Identifiable {
         }
     }
 
-    var defaultWorkingDirectory: String {
-        NSHomeDirectory() + "/Desktop/trivium"
-    }
-
-    func cliArgs(logger: GroupChatLogger?) -> [String] {
-        switch self {
-        case .claude:
-            var args: [String] = []
-            if let logger {
-                args.append(contentsOf: ["--mcp-config", logger.mcpConfigPath])
-            }
-            return args
-        case .codex:
-            var args = ["--full-auto"]
-            if let logger {
-                let serverPath = NSHomeDirectory() + "/Desktop/trivium/trivium-mcp-server"
-                args.append(contentsOf: [
-                    "-c", "mcp_servers.trivium-group-chat.command=\"\(serverPath)\"",
-                    "-c", "mcp_servers.trivium-group-chat.args=[\"\(logger.chatLogPath)\"]",
-                ])
-            }
-            return args
-        }
-    }
-
-    // Build environment with the paths both CLIs need
-    static var terminalEnvironment: [String] {
+    // Environment with the paths both CLIs need
+    static var processEnvironment: [String: String] {
         var env = ProcessInfo.processInfo.environment
         let extraPaths = [
             NSHomeDirectory() + "/.local/bin",
@@ -71,6 +46,6 @@ enum AgentType: String, Sendable, Codable, CaseIterable, Identifiable {
         env["PATH"] = (extraPaths + [currentPath]).joined(separator: ":")
         env["TERM"] = "xterm-256color"
         env["LANG"] = env["LANG"] ?? "en_US.UTF-8"
-        return env.map { "\($0.key)=\($0.value)" }
+        return env
     }
 }

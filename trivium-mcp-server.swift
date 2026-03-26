@@ -1,17 +1,23 @@
 #!/usr/bin/env swift
 
-// Trivium MCP Server
-// A lightweight MCP server that exposes group chat history to CLI agents.
-// Speaks JSON-RPC 2.0 over stdio per the MCP protocol.
+// Trivium MCP Server (Global)
+// A single MCP server that routes group chat messages by directory.
+// Each tool call includes a `directory` param to scope the chat log.
+// Chat logs are stored at /tmp/trivium/chats/<hash>/group-chat.jsonl
 
 import Foundation
+import CryptoKit
 
-let chatLogPath: String = {
-    if CommandLine.arguments.count > 1 {
-        return CommandLine.arguments[1]
-    }
-    return NSTemporaryDirectory() + "trivium-group-chat.jsonl"
-}()
+func chatLogPath(for directory: String) -> String {
+    let normalized = (directory as NSString).standardizingPath
+    let hash = Insecure.MD5.hash(data: Data(normalized.utf8))
+        .prefix(8)
+        .map { String(format: "%02x", $0) }
+        .joined()
+    let dir = "/tmp/trivium/chats/\(hash)"
+    try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    return dir + "/group-chat.jsonl"
+}
 
 struct JSONRPCRequest: Decodable {
     let jsonrpc: String
@@ -59,15 +65,8 @@ func respond(id: Int?, result: Any) {
 func handleInitialize(id: Int?) {
     respond(id: id, result: [
         "protocolVersion": "2024-11-05",
-        "capabilities": [
-            "tools": [
-                "listChanged": false,
-            ],
-        ],
-        "serverInfo": [
-            "name": "trivium-group-chat",
-            "version": "1.0.0",
-        ],
+        "capabilities": ["tools": ["listChanged": false]],
+        "serverInfo": ["name": "trivium-group-chat", "version": "2.0.0"],
     ] as [String: Any])
 }
 
@@ -76,34 +75,42 @@ func handleToolsList(id: Int?) {
         "tools": [
             [
                 "name": "get_group_chat",
-                "description": "Get recent messages from the Trivium group chat. Use this to see what has been discussed in the group chat room with other agents and the user.",
+                "description": "Get recent messages from the Trivium group chat for the current project directory. Use this to see what has been discussed with other agents and the user.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
+                        "directory": [
+                            "type": "string",
+                            "description": "The project directory path (use your current working directory)",
+                        ],
                         "last_n": [
                             "type": "number",
                             "description": "Number of recent messages to retrieve (default: 50)",
                         ],
                     ],
-                    "required": [] as [String],
+                    "required": ["directory"],
                 ],
             ],
             [
                 "name": "send_to_group_chat",
-                "description": "Post a message to the Trivium group chat that all agents and the user can see. You MUST include your_name so the message is attributed to you.",
+                "description": "Post a message to the Trivium group chat for the current project directory. All agents and the user can see it. You MUST include your_name.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
+                        "directory": [
+                            "type": "string",
+                            "description": "The project directory path (use your current working directory)",
+                        ],
                         "message": [
                             "type": "string",
-                            "description": "The message to post to the group chat",
+                            "description": "The message to post",
                         ],
                         "your_name": [
                             "type": "string",
-                            "description": "Your name (e.g. 'Claude' or 'Codex') so the message shows as coming from you",
+                            "description": "Your name (e.g. 'Claude' or 'Codex')",
                         ],
                     ],
-                    "required": ["message", "your_name"],
+                    "required": ["directory", "message", "your_name"],
                 ],
             ],
         ] as [[String: Any]],
@@ -117,57 +124,54 @@ func handleToolCall(id: Int?, params: [String: Any]?) {
     }
     let args = params?["arguments"] as? [String: Any] ?? [:]
 
+    guard let directory = args["directory"] as? String else {
+        respond(id: id, result: [
+            "content": [["type": "text", "text": "Error: 'directory' argument is required"]],
+        ])
+        return
+    }
+
+    let logPath = chatLogPath(for: directory)
+
     switch name {
     case "get_group_chat":
         let lastN = (args["last_n"] as? Int) ?? 50
-        let messages = readChatLog(lastN: lastN)
+        let messages = readChatLog(path: logPath, lastN: lastN)
         let text = messages.isEmpty
-            ? "No group chat messages yet."
+            ? "No group chat messages yet for \(directory)."
             : messages.joined(separator: "\n")
-        respond(id: id, result: [
-            "content": [["type": "text", "text": text]],
-        ])
+        respond(id: id, result: ["content": [["type": "text", "text": text]]])
 
     case "send_to_group_chat":
-        if let message = args["message"] as? String {
-            let senderName = (args["your_name"] as? String) ?? "agent"
-            appendToChatLog(sender: senderName, text: message)
-            respond(id: id, result: [
-                "content": [["type": "text", "text": "Message posted to group chat."]],
-            ])
-        } else {
-            respond(id: id, result: [
-                "content": [["type": "text", "text": "Error: missing 'message' argument"]],
-            ])
+        guard let message = args["message"] as? String else {
+            respond(id: id, result: ["content": [["type": "text", "text": "Error: missing 'message'"]]])
+            return
         }
+        let senderName = (args["your_name"] as? String) ?? "agent"
+        appendToChatLog(path: logPath, sender: senderName, text: message)
+        respond(id: id, result: ["content": [["type": "text", "text": "Message posted to group chat."]]])
 
     default:
-        respond(id: id, result: [
-            "content": [["type": "text", "text": "Error: unknown tool '\(name)'"]],
-        ])
+        respond(id: id, result: ["content": [["type": "text", "text": "Error: unknown tool '\(name)'"]]])
     }
 }
 
-func readChatLog(lastN: Int) -> [String] {
-    guard let data = try? String(contentsOfFile: chatLogPath, encoding: .utf8) else {
-        return []
-    }
-    let lines = data.components(separatedBy: .newlines).filter { !$0.isEmpty }
-    let recent = Array(lines.suffix(lastN))
-
-    return recent.compactMap { line in
-        guard let jsonData = line.data(using: .utf8),
-              let entry = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-              let sender = entry["sender"] as? String,
-              let text = entry["text"] as? String,
-              let timestamp = entry["timestamp"] as? String else {
-            return nil
+func readChatLog(path: String, lastN: Int) -> [String] {
+    guard let data = try? String(contentsOfFile: path, encoding: .utf8) else { return [] }
+    return data.components(separatedBy: .newlines)
+        .filter { !$0.isEmpty }
+        .suffix(lastN)
+        .compactMap { line in
+            guard let jsonData = line.data(using: .utf8),
+                  let entry = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                  let sender = entry["sender"] as? String,
+                  let text = entry["text"] as? String,
+                  let timestamp = entry["timestamp"] as? String else { return nil }
+            return "[\(timestamp)] \(sender): \(text)"
         }
-        return "[\(timestamp)] \(sender): \(text)"
-    }
 }
 
-func appendToChatLog(sender: String, text: String) {
+func appendToChatLog(path: String, sender: String, text: String) {
     let entry: [String: Any] = [
         "sender": sender,
         "text": text,
@@ -176,19 +180,17 @@ func appendToChatLog(sender: String, text: String) {
     guard let data = try? JSONSerialization.data(withJSONObject: entry),
           let line = String(data: data, encoding: .utf8) else { return }
 
-    let lineData = (line + "\n").data(using: .utf8)!
-
-    // O_APPEND ensures atomic positioning at EOF per write call.
-    // Each JSONL line is well under PIPE_BUF (4096), so writes won't interleave.
-    let fd = open(chatLogPath, O_WRONLY | O_APPEND | O_CREAT, 0o644)
-    guard fd >= 0 else { return }
-    lineData.withUnsafeBytes { buf in
-        _ = write(fd, buf.baseAddress!, buf.count)
+    let lineData = Data((line + "\n").utf8)
+    if !FileManager.default.fileExists(atPath: path) {
+        FileManager.default.createFile(atPath: path, contents: nil)
     }
-    close(fd)
+    guard let handle = FileHandle(forWritingAtPath: path) else { return }
+    handle.seekToEndOfFile()
+    handle.write(lineData)
+    try? handle.close()
 }
 
-// Main loop: read JSON-RPC from stdin line by line
+// Main loop
 while let line = readLine(strippingNewline: true) {
     guard !line.isEmpty,
           let data = line.data(using: .utf8),
@@ -199,18 +201,12 @@ while let line = readLine(strippingNewline: true) {
     switch request.method {
     case "initialize":
         handleInitialize(id: request.id)
-
     case "notifications/initialized":
-        // Client ack, no response needed
         break
-
     case "tools/list":
         handleToolsList(id: request.id)
-
     case "tools/call":
-        let params = request.params?.value as? [String: Any]
-        handleToolCall(id: request.id, params: params)
-
+        handleToolCall(id: request.id, params: request.params?.value as? [String: Any])
     default:
         if request.id != nil {
             respond(id: request.id, result: ["error": "Unknown method: \(request.method)"])

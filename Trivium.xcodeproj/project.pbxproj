@@ -6,10 +6,6 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		AA000020000000000000000A /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = AA000021000000000000000A /* SwiftTerm */; };
-/* End PBXBuildFile section */
-
 /* Begin PBXFileReference section */
 		AA000005000000000000000A /* Trivium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Trivium.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -40,7 +36,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AA000020000000000000000A /* SwiftTerm in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -82,7 +77,6 @@
 			);
 			name = Trivium;
 			packageProductDependencies = (
-				AA000021000000000000000A /* SwiftTerm */,
 			);
 			productName = Trivium;
 			productReference = AA000005000000000000000A /* Trivium.app */;
@@ -112,9 +106,6 @@
 			);
 			mainGroup = AA000003000000000000000A;
 			minimizedProjectReferenceProxies = 1;
-			packageReferences = (
-				AA000022000000000000000A /* XCRemoteSwiftPackageReference "SwiftTerm" */,
-			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AA000004000000000000000A /* Products */;
 			projectDirPath = "";
@@ -346,24 +337,6 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		AA000022000000000000000A /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.12.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		AA000021000000000000000A /* SwiftTerm */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = AA000022000000000000000A /* XCRemoteSwiftPackageReference "SwiftTerm" */;
-			productName = SwiftTerm;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = AA000009000000000000000A /* Project object */;
 }

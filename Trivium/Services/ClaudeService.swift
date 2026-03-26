@@ -12,6 +12,7 @@ final class ClaudeService: AgentService, @unchecked Sendable {
         return AsyncStream { continuation in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: Self.binaryPath)
+            process.environment = AgentType.processEnvironment
 
             var args = [
                 "-p",

@@ -9,7 +9,7 @@ final class AgentCoordinator {
     private(set) var fullHistory: [TaggedMessage] = []
     private var currentTask: Task<Void, Never>?
 
-    var workingDirectory: String = NSHomeDirectory()
+    var workingDirectory: String = NSHomeDirectory() + "/Desktop/trivium"
 
     init(config: AgentConfig) {
         self.config = config

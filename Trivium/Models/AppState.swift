@@ -3,20 +3,23 @@ import Foundation
 @Observable
 @MainActor
 final class AppState {
+    let directory: String
     var agents: [AgentConfig] = []
     var coordinators: [UUID: AgentCoordinator] = [:]
     var chatRoom = Conversation()
-    var privateConversations: [UUID: Conversation] = [:]
+    let groupChatLogger: GroupChatLogger
 
-    var selectedSidebarItem: SidebarItem? = .chat
-
-    let groupChatLogger = GroupChatLogger()
+    init(directory: String) {
+        self.directory = directory
+        self.groupChatLogger = GroupChatLogger(directory: directory)
+    }
 
     func addAgent(name: String, type: AgentType) -> AgentConfig {
         let agent = AgentConfig(name: name, type: type)
         agents.append(agent)
-        privateConversations[agent.id] = Conversation()
-        coordinators[agent.id] = AgentCoordinator(config: agent)
+        let coordinator = AgentCoordinator(config: agent)
+        coordinator.workingDirectory = directory
+        coordinators[agent.id] = coordinator
         return agent
     }
 
@@ -24,20 +27,10 @@ final class AppState {
         coordinators[agent.id]?.cancel()
         coordinators.removeValue(forKey: agent.id)
         agents.removeAll { $0.id == agent.id }
-        privateConversations.removeValue(forKey: agent.id)
     }
 
     func coordinator(for agentID: UUID) -> AgentCoordinator? {
         coordinators[agentID]
-    }
-
-    func privateConversation(for agentID: UUID) -> Conversation {
-        if let existing = privateConversations[agentID] {
-            return existing
-        }
-        let conv = Conversation()
-        privateConversations[agentID] = conv
-        return conv
     }
 
     func agent(named name: String) -> AgentConfig? {
@@ -47,9 +40,8 @@ final class AppState {
     func agent(withID id: UUID) -> AgentConfig? {
         agents.first { $0.id == id }
     }
-}
 
-enum SidebarItem: Hashable {
-    case chat
-    case agent(UUID)
+    var directoryName: String {
+        (directory as NSString).lastPathComponent
+    }
 }
