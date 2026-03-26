@@ -5,6 +5,7 @@ struct AgentSessionView: View {
     let agent: AgentConfig
     var isActive: Bool = true
     @State private var processEnded = false
+    @State private var exitCode: Int32? = nil
 
     var body: some View {
         ZStack {
@@ -12,17 +13,18 @@ struct AgentSessionView: View {
                 ContentUnavailableView(
                     "\(agent.name) session ended",
                     systemImage: "terminal",
-                    description: Text("The process has terminated. Remove and re-add the agent to start a new session.")
+                    description: Text(verbatim: "Exit code: \(exitCode.map(String.init) ?? "unknown")\nExecutable: \(agent.type.executablePath)\nArgs: \(agent.type.cliArgs(logger: appState.groupChatLogger))\nCwd: \(agent.type.defaultWorkingDirectory)")
                 )
             } else {
                 TerminalViewRepresentable(
                     executable: agent.type.executablePath,
-                    args: agent.type.interactiveArgs(logger: appState.groupChatLogger),
-                    environment: nil,
+                    args: agent.type.cliArgs(logger: appState.groupChatLogger),
+                    environment: AgentType.terminalEnvironment,
                     workingDirectory: agent.type.defaultWorkingDirectory,
                     isActive: isActive,
-                    onProcessTerminated: { _ in
+                    onProcessTerminated: { code in
                         Task { @MainActor in
+                            exitCode = code
                             processEnded = true
                             agent.status = .disconnected
                         }

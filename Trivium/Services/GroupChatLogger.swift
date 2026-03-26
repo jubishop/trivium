@@ -93,11 +93,13 @@ final class GroupChatLogger {
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
             eventMask: [.write, .extend],
-            queue: .global(qos: .userInitiated)
+            queue: .main
         )
 
         source.setEventHandler { [weak self] in
-            self?.readNewLines()
+            MainActor.assumeIsolated {
+                self?.readNewLines()
+            }
         }
 
         source.setCancelHandler {
@@ -155,9 +157,7 @@ final class GroupChatLogger {
                   let sender = entry["sender"] as? String,
                   let msgText = entry["text"] as? String else { continue }
 
-            DispatchQueue.main.async { [weak self] in
-                self?.onNewMessage?(sender, msgText)
-            }
+            onNewMessage?(sender, msgText)
         }
     }
 

@@ -34,12 +34,11 @@ enum AgentType: String, Sendable, Codable, CaseIterable, Identifiable {
         }
     }
 
-    // Both agents run from the trivium repo so they can see/edit project files
     var defaultWorkingDirectory: String {
         NSHomeDirectory() + "/Desktop/trivium"
     }
 
-    func interactiveArgs(logger: GroupChatLogger?) -> [String] {
+    func cliArgs(logger: GroupChatLogger?) -> [String] {
         switch self {
         case .claude:
             var args: [String] = []
@@ -58,5 +57,20 @@ enum AgentType: String, Sendable, Codable, CaseIterable, Identifiable {
             }
             return args
         }
+    }
+
+    // Build environment with the paths both CLIs need
+    static var terminalEnvironment: [String] {
+        var env = ProcessInfo.processInfo.environment
+        let extraPaths = [
+            NSHomeDirectory() + "/.local/bin",
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
+        ]
+        let currentPath = env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        env["PATH"] = (extraPaths + [currentPath]).joined(separator: ":")
+        env["TERM"] = "xterm-256color"
+        env["LANG"] = env["LANG"] ?? "en_US.UTF-8"
+        return env.map { "\($0.key)=\($0.value)" }
     }
 }
