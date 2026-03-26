@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXFileReference section */
+		AA000005000000000000000A /* Trivium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Trivium.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
 		AA000011000000000000000A /* Exceptions for "Trivium" folder in "Trivium" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -54,10 +58,6 @@
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
-
-/* Begin PBXFileReference section */
-		AA000005000000000000000A /* Trivium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Trivium.app; sourceTree = BUILT_PRODUCTS_DIR; };
-/* End PBXFileReference section */
 
 /* Begin PBXNativeTarget section */
 		AA000006000000000000000A /* Trivium */ = {
@@ -316,7 +316,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
 	};
 	rootObject = AA000009000000000000000A /* Project object */;
 }
