@@ -1,0 +1,5 @@
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+xcodebuild -project "$PROJECT_DIR/Trivium.xcodeproj" -scheme Trivium -configuration Debug -destination 'platform=macOS' build 2>&1 | tail -1

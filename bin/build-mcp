@@ -1,0 +1,5 @@
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+swiftc -o "$PROJECT_DIR/trivium-mcp-server" "$PROJECT_DIR/trivium-mcp-server.swift" && echo "** MCP SERVER BUILD SUCCEEDED **"

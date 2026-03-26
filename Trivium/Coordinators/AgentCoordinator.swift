@@ -58,6 +58,7 @@ final class AgentCoordinator {
                 switch event {
                 case .sessionStarted(let id):
                     self.sessionID = id
+                    self.saveSessionID()
 
                 case .textDelta(let delta):
                     responseMessage.text += delta
@@ -121,5 +122,27 @@ final class AgentCoordinator {
         When responding in the group chat, use @name to address other participants. \
         Respond naturally and concisely.
         """
+    }
+
+    // MARK: - Session persistence
+
+    private var sessionFilePath: String {
+        // Store alongside the chat log, keyed by agent name
+        let dir = (GroupChatLogger.chatLogDir(for: workingDirectory))
+        return dir + "/session-\(config.name.lowercased()).id"
+    }
+
+    private func saveSessionID() {
+        guard let sessionID else { return }
+        try? sessionID.write(toFile: sessionFilePath, atomically: true, encoding: .utf8)
+        Log.info("[\(config.name)] Saved session ID: \(sessionID)")
+    }
+
+    func loadSessionID() {
+        guard let saved = try? String(contentsOfFile: sessionFilePath, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !saved.isEmpty else { return }
+        sessionID = saved
+        Log.info("[\(config.name)] Restored session ID: \(saved)")
     }
 }

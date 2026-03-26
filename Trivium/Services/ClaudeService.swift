@@ -30,6 +30,9 @@ final class ClaudeService: AgentService, @unchecked Sendable {
             process.arguments = args
             process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
 
+            Log.info("[Claude] Launching: \(Self.binaryPath) \(args.joined(separator: " "))")
+            Log.info("[Claude] cwd: \(workingDirectory)")
+
             let stdout = Pipe()
             let stderr = Pipe()
             process.standardOutput = stdout
@@ -43,10 +46,13 @@ final class ClaudeService: AgentService, @unchecked Sendable {
             var fullText = ""
 
             process.terminationHandler = { [weak self] proc in
+                Log.info("[Claude] Process terminated with code \(proc.terminationStatus)")
                 if proc.terminationStatus != 0 {
                     let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-                    let errStr = String(data: errData, encoding: .utf8) ?? "Process exited with code \(proc.terminationStatus)"
-                    if !errStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let errStr = String(data: errData, encoding: .utf8) ?? "exit code \(proc.terminationStatus)"
+                    let trimmed = errStr.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        Log.error("[Claude] stderr: \(trimmed)")
                         continuation.yield(.error(errStr))
                     }
                 }
@@ -62,7 +68,9 @@ final class ClaudeService: AgentService, @unchecked Sendable {
 
             do {
                 try process.run()
+                Log.info("[Claude] Process started, pid=\(process.processIdentifier)")
             } catch {
+                Log.error("[Claude] Failed to launch: \(error.localizedDescription)")
                 continuation.yield(.error("Failed to launch Claude CLI: \(error.localizedDescription)"))
                 continuation.yield(.done)
                 continuation.finish()
@@ -82,6 +90,7 @@ final class ClaudeService: AgentService, @unchecked Sendable {
                         if let subtype = json["subtype"] as? String, subtype == "init",
                            let sid = json["session_id"] as? String {
                             capturedSessionID = sid
+                            Log.info("[Claude] Session started: \(sid)")
                             continuation.yield(.sessionStarted(id: sid))
                         }
 
@@ -99,6 +108,7 @@ final class ClaudeService: AgentService, @unchecked Sendable {
 
                     case "result":
                         if let result = json["result"] as? String {
+                            Log.info("[Claude] Result received, length=\(result.count)")
                             continuation.yield(.textComplete(result))
                         }
                         if let sid = json["session_id"] as? String, capturedSessionID == nil {
@@ -107,6 +117,7 @@ final class ClaudeService: AgentService, @unchecked Sendable {
                         }
                         if let isError = json["is_error"] as? Bool, isError,
                            let errMsg = json["result"] as? String {
+                            Log.error("[Claude] API error: \(errMsg)")
                             continuation.yield(.error(errMsg))
                         }
 
@@ -114,6 +125,7 @@ final class ClaudeService: AgentService, @unchecked Sendable {
                         break
                     }
                 }
+                Log.info("[Claude] stdout stream ended")
             }
         }
     }
@@ -125,6 +137,7 @@ final class ClaudeService: AgentService, @unchecked Sendable {
         lock.unlock()
 
         if let proc, proc.isRunning {
+            Log.info("[Claude] Cancelling process pid=\(proc.processIdentifier)")
             proc.terminate()
         }
     }

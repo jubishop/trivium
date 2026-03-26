@@ -17,7 +17,6 @@ final class CodexService: AgentService, @unchecked Sendable {
             var args: [String]
 
             if let sessionID {
-                // Resume a previous session
                 args = [
                     "exec", "resume",
                     "--json",
@@ -39,11 +38,13 @@ final class CodexService: AgentService, @unchecked Sendable {
             process.arguments = args
             process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
 
+            Log.info("[Codex] Launching: \(Self.binaryPath) \(args.joined(separator: " "))")
+            Log.info("[Codex] cwd: \(workingDirectory)")
+
             let stdout = Pipe()
             let stderr = Pipe()
             process.standardOutput = stdout
             process.standardError = stderr
-            // Provide empty stdin so codex doesn't wait for input
             process.standardInput = Pipe()
 
             lock.lock()
@@ -51,11 +52,13 @@ final class CodexService: AgentService, @unchecked Sendable {
             lock.unlock()
 
             process.terminationHandler = { [weak self] proc in
+                Log.info("[Codex] Process terminated with code \(proc.terminationStatus)")
                 if proc.terminationStatus != 0 {
                     let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-                    let errStr = String(data: errData, encoding: .utf8) ?? "Process exited with code \(proc.terminationStatus)"
+                    let errStr = String(data: errData, encoding: .utf8) ?? "exit code \(proc.terminationStatus)"
                     let trimmed = errStr.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty {
+                        Log.error("[Codex] stderr: \(trimmed)")
                         continuation.yield(.error(trimmed))
                     }
                 }
@@ -71,7 +74,9 @@ final class CodexService: AgentService, @unchecked Sendable {
 
             do {
                 try process.run()
+                Log.info("[Codex] Process started, pid=\(process.processIdentifier)")
             } catch {
+                Log.error("[Codex] Failed to launch: \(error.localizedDescription)")
                 continuation.yield(.error("Failed to launch Codex CLI: \(error.localizedDescription)"))
                 continuation.yield(.done)
                 continuation.finish()
@@ -82,6 +87,8 @@ final class CodexService: AgentService, @unchecked Sendable {
                 var fullText = ""
 
                 for await line in StreamParser.lines(from: stdout.fileHandleForReading) {
+                    Log.info("[Codex] stdout: \(String(line.prefix(200)))")
+
                     guard let data = line.data(using: .utf8),
                           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                           let type = json["type"] as? String else {
@@ -91,6 +98,7 @@ final class CodexService: AgentService, @unchecked Sendable {
                     switch type {
                     case "thread.started":
                         if let threadID = json["thread_id"] as? String {
+                            Log.info("[Codex] Thread started: \(threadID)")
                             continuation.yield(.sessionStarted(id: threadID))
                         }
 
@@ -98,14 +106,14 @@ final class CodexService: AgentService, @unchecked Sendable {
                         guard let item = json["item"] as? [String: Any],
                               let itemType = item["type"] as? String else { continue }
 
-                        // Only surface final agent messages, not command executions
-                        // or intermediate thinking
+                        Log.info("[Codex] item.completed type=\(itemType)")
                         if itemType == "agent_message",
                            let text = item["text"] as? String {
                             fullText = text
                         }
 
                     case "turn.completed":
+                        Log.info("[Codex] turn.completed, fullText length=\(fullText.count)")
                         if !fullText.isEmpty {
                             continuation.yield(.textDelta(fullText))
                             continuation.yield(.textComplete(fullText))
@@ -115,6 +123,7 @@ final class CodexService: AgentService, @unchecked Sendable {
                         break
                     }
                 }
+                Log.info("[Codex] stdout stream ended")
             }
         }
     }
@@ -126,6 +135,7 @@ final class CodexService: AgentService, @unchecked Sendable {
         lock.unlock()
 
         if let proc, proc.isRunning {
+            Log.info("[Codex] Cancelling process pid=\(proc.processIdentifier)")
             proc.terminate()
         }
     }

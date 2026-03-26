@@ -1,0 +1,15 @@
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+DIR="${1:-$(pwd)}"
+DIR="$(cd "$DIR" 2>/dev/null && pwd)"
+
+# Find the app in DerivedData
+APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData/Trivium-*/Build/Products/Debug/Trivium.app -maxdepth 0 2>/dev/null | head -1)
+
+if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+    echo "Trivium.app not found in DerivedData. Build it first: $PROJECT_DIR/bin/build-app"
+    exit 1
+fi
+
+exec "$APP_PATH/Contents/MacOS/Trivium" "$DIR"
