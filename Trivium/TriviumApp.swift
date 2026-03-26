@@ -2,7 +2,23 @@ import SwiftUI
 
 @main
 struct TriviumApp: App {
-    @State private var appState = AppState()
+    @State private var appState: AppState
+
+    init() {
+        // Accept directory as CLI argument, default to cwd
+        let dir: String
+        if CommandLine.arguments.count > 1 {
+            let arg = CommandLine.arguments[1]
+            if arg.hasPrefix("/") {
+                dir = arg
+            } else {
+                dir = FileManager.default.currentDirectoryPath + "/" + arg
+            }
+        } else {
+            dir = FileManager.default.currentDirectoryPath
+        }
+        _appState = State(initialValue: AppState(directory: dir))
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -13,6 +29,7 @@ struct TriviumApp: App {
                     loadChatHistory()
                     startFileWatcher()
                 }
+                .navigationTitle("Trivium — \(appState.directoryName)")
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 800, height: 600)
@@ -45,7 +62,6 @@ struct TriviumApp: App {
             let displayText = msgSender.isUser ? "[\(sender)] \(text)" : text
             appState.chatRoom.append(Message(sender: msgSender, text: displayText))
 
-            // Route @mentions so mentioned agents respond
             let mentioned = InputParser.extractMentionedAgents(from: text, agents: appState.agents)
             let groupTagged = TaggedMessage(channel: .group, sender: .agent(sender), text: text)
 

@@ -6,14 +6,13 @@
 // Chat logs are stored at /tmp/trivium/chats/<hash>/group-chat.jsonl
 
 import Foundation
-import CryptoKit
 
 func chatLogPath(for directory: String) -> String {
     let normalized = (directory as NSString).standardizingPath
-    let hash = Insecure.MD5.hash(data: Data(normalized.utf8))
-        .prefix(8)
-        .map { String(format: "%02x", $0) }
-        .joined()
+    let hashValue = normalized.utf8.reduce(into: UInt64(5381)) { hash, byte in
+        hash = hash &* 33 &+ UInt64(byte)
+    }
+    let hash = String(hashValue, radix: 16)
     let dir = "/tmp/trivium/chats/\(hash)"
     try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
     return dir + "/group-chat.jsonl"

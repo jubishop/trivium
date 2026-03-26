@@ -22,7 +22,7 @@ final class ClaudeService: AgentService, @unchecked Sendable {
             ]
 
             if let sessionID {
-                args.append(contentsOf: ["-c", "--session-id", sessionID])
+                args.append(contentsOf: ["--resume", sessionID])
             }
 
             args.append(prompt)

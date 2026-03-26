@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 
 @MainActor
 final class GroupChatLogger {
@@ -13,10 +12,11 @@ final class GroupChatLogger {
 
     init(directory: String) {
         self.directory = (directory as NSString).standardizingPath
-        let hash = Insecure.MD5.hash(data: Data(self.directory.utf8))
-            .prefix(8)
-            .map { String(format: "%02x", $0) }
-            .joined()
+        // Stable hex hash of the directory path for the log folder name
+        let hashValue = self.directory.utf8.reduce(into: UInt64(5381)) { hash, byte in
+            hash = hash &* 33 &+ UInt64(byte)
+        }
+        let hash = String(hashValue, radix: 16)
         let logDir = "/tmp/trivium/chats/\(hash)"
         try? FileManager.default.createDirectory(atPath: logDir, withIntermediateDirectories: true)
         chatLogPath = logDir + "/group-chat.jsonl"
