@@ -3,23 +3,32 @@ import SwiftUI
 struct AgentSessionView: View {
     @Environment(AppState.self) private var appState
     let agent: AgentConfig
-    @State private var inputText = ""
-
-    private var conversation: Conversation {
-        appState.privateConversation(for: agent.id)
-    }
+    var isActive: Bool = true
+    @State private var processEnded = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            sessionMessages
-
-            Divider()
-
-            InputBar(
-                text: $inputText,
-                placeholder: "Message \(agent.name)...",
-                onSend: handleSend
-            )
+        ZStack {
+            if processEnded {
+                ContentUnavailableView(
+                    "\(agent.name) session ended",
+                    systemImage: "terminal",
+                    description: Text("The process has terminated. Remove and re-add the agent to start a new session.")
+                )
+            } else {
+                TerminalViewRepresentable(
+                    executable: agent.type.executablePath,
+                    args: agent.type.interactiveArgs(logger: appState.groupChatLogger),
+                    environment: nil,
+                    workingDirectory: NSHomeDirectory(),
+                    isActive: isActive,
+                    onProcessTerminated: { _ in
+                        Task { @MainActor in
+                            processEnded = true
+                            agent.status = .disconnected
+                        }
+                    }
+                )
+            }
         }
         .navigationTitle(agent.name)
         .toolbar {
@@ -32,37 +41,8 @@ struct AgentSessionView: View {
                 }
             }
         }
-    }
-
-    private var sessionMessages: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(conversation.messages) { message in
-                        AgentMessageView(
-                            message: message,
-                            agentName: agent.name,
-                            agentColor: agent.color
-                        )
-                        .id(message.id)
-                    }
-                }
-                .padding(.vertical, 8)
-            }
-            .onChange(of: conversation.messages.last?.id) { _, newID in
-                if let newID {
-                    withAnimation {
-                        proxy.scrollTo(newID, anchor: .bottom)
-                    }
-                }
-            }
+        .onAppear {
+            agent.status = .idle
         }
-    }
-
-    private func handleSend(_ text: String) {
-        let userMessage = Message(sender: .user, text: text)
-        conversation.append(userMessage)
-
-        // TODO: Phase 2/3 -- route through AgentCoordinator
     }
 }

@@ -9,26 +9,24 @@ struct SidebarView: View {
 
         List(selection: $state.selectedSidebarItem) {
             Section {
-                NavigationLink(value: SidebarItem.chat) {
-                    Label("Chat", systemImage: "bubble.left.and.bubble.right.fill")
-                }
+                Label("Chat", systemImage: "bubble.left.and.bubble.right.fill")
+                    .tag(SidebarItem.chat)
             }
 
             Section("Agents") {
                 ForEach(appState.agents) { agent in
-                    NavigationLink(value: SidebarItem.agent(agent.id)) {
-                        HStack(spacing: 8) {
-                            Image(systemName: agent.icon)
-                                .foregroundStyle(agent.color)
-                                .frame(width: 20)
+                    HStack(spacing: 8) {
+                        Image(systemName: agent.icon)
+                            .foregroundStyle(agent.color)
+                            .frame(width: 20)
 
-                            Text(agent.name)
+                        Text(agent.name)
 
-                            Spacer()
+                        Spacer()
 
-                            StatusIndicator(status: agent.status)
-                        }
+                        StatusIndicator(status: agent.status)
                     }
+                    .tag(SidebarItem.agent(agent.id))
                     .contextMenu {
                         Button("Remove", role: .destructive) {
                             appState.removeAgent(agent)

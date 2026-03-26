@@ -6,8 +6,7 @@ enum AgentServiceFactory {
         case .claude:
             ClaudeService()
         case .codex:
-            // TODO: Phase 3
-            ClaudeService() // placeholder
+            CodexService()
         }
     }
 }

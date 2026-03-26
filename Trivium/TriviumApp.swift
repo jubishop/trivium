@@ -10,6 +10,8 @@ struct TriviumApp: App {
                 .environment(appState)
                 .onAppear {
                     seedDefaultAgents()
+                    loadChatHistory()
+                    startFileWatcher()
                 }
         }
         .windowStyle(.titleBar)
@@ -20,5 +22,30 @@ struct TriviumApp: App {
         guard appState.agents.isEmpty else { return }
         _ = appState.addAgent(name: "Claude", type: .claude)
         _ = appState.addAgent(name: "Codex", type: .codex)
+    }
+
+    private func loadChatHistory() {
+        let existing = appState.groupChatLogger.loadExistingMessages()
+        for (sender, text) in existing {
+            let msgSender: MessageSender
+            if sender == "User" {
+                msgSender = .user
+            } else if let agent = appState.agent(named: sender) {
+                msgSender = .agent(agent.id)
+            } else {
+                // External agent or unknown sender
+                msgSender = .user
+            }
+            let message = Message(sender: msgSender, text: sender == "User" ? text : text)
+            appState.chatRoom.append(message)
+        }
+    }
+
+    private func startFileWatcher() {
+        appState.groupChatLogger.startWatching { sender, text in
+            // Message written to the JSONL by an agent via MCP send_to_group_chat
+            let message = Message(sender: .user, text: "[\(sender)] \(text)")
+            appState.chatRoom.append(message)
+        }
     }
 }
