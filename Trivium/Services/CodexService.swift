@@ -109,13 +109,18 @@ final class CodexService: AgentService, @unchecked Sendable {
                         Log.info("[Codex] item.completed type=\(itemType)")
                         if itemType == "agent_message",
                            let text = item["text"] as? String {
-                            fullText = text
+                            // Stream each intermediate agent message as it arrives
+                            if !fullText.isEmpty {
+                                fullText += "\n\n"
+                                continuation.yield(.textDelta("\n\n"))
+                            }
+                            fullText += text
+                            continuation.yield(.textDelta(text))
                         }
 
                     case "turn.completed":
                         Log.info("[Codex] turn.completed, fullText length=\(fullText.count)")
                         if !fullText.isEmpty {
-                            continuation.yield(.textDelta(fullText))
                             continuation.yield(.textComplete(fullText))
                         }
 
