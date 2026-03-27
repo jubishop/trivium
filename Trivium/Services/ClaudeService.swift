@@ -1,23 +1,32 @@
 import Foundation
 
 final class ClaudeService: AgentService, @unchecked Sendable {
-    private static let binaryPath = "/Users/jubi/.local/bin/claude"
-
+    private let executablePath: String?
     private var currentProcess: Process?
     private let lock = NSLock()
+
+    init(executablePath: String?) {
+        self.executablePath = executablePath
+    }
 
     func send(prompt: String, sessionID: String?, workingDirectory: String) -> AsyncStream<StreamEvent> {
         cancel()
 
         return AsyncStream { continuation in
+            guard let executablePath = self.executablePath else {
+                continuation.yield(.error("Claude CLI not found. \(AgentType.claude.executableLookupHint)"))
+                continuation.yield(.done)
+                continuation.finish()
+                return
+            }
+
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: Self.binaryPath)
+            process.executableURL = URL(fileURLWithPath: executablePath)
             process.environment = AgentType.processEnvironment
 
             var args = [
                 "-p",
                 "--output-format", "stream-json",
-                "--verbose",
                 "--include-partial-messages",
             ]
 
@@ -30,7 +39,7 @@ final class ClaudeService: AgentService, @unchecked Sendable {
             process.arguments = args
             process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
 
-            Log.info("[Claude] Launching: \(Self.binaryPath) \(args.joined(separator: " "))")
+            Log.info("[Claude] Launching: \(executablePath) \(args.joined(separator: " "))")
             Log.info("[Claude] cwd: \(workingDirectory)")
 
             let stdout = Pipe()
@@ -44,20 +53,11 @@ final class ClaudeService: AgentService, @unchecked Sendable {
 
             var capturedSessionID: String?
             var fullText = ""
+            let lifecycle = ProcessStreamCoordinator(label: "Claude", continuation: continuation)
 
             process.terminationHandler = { [weak self] proc in
                 Log.info("[Claude] Process terminated with code \(proc.terminationStatus)")
-                if proc.terminationStatus != 0 {
-                    let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-                    let errStr = String(data: errData, encoding: .utf8) ?? "exit code \(proc.terminationStatus)"
-                    let trimmed = errStr.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty {
-                        Log.error("[Claude] stderr: \(trimmed)")
-                        continuation.yield(.error(errStr))
-                    }
-                }
-                continuation.yield(.done)
-                continuation.finish()
+                lifecycle.markTerminated(status: proc.terminationStatus)
 
                 self?.lock.lock()
                 if self?.currentProcess === proc {
@@ -132,6 +132,14 @@ final class ClaudeService: AgentService, @unchecked Sendable {
                     }
                 }
                 Log.info("[Claude] stdout stream ended")
+                lifecycle.markStdoutFinished()
+            }
+
+            Task.detached {
+                for await line in StreamParser.lines(from: stderr.fileHandleForReading) {
+                    lifecycle.appendStderrLine(line)
+                }
+                lifecycle.markStderrFinished()
             }
         }
     }

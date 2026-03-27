@@ -4,9 +4,9 @@ enum AgentServiceFactory {
     static func create(for type: AgentType) -> any AgentService {
         switch type {
         case .claude:
-            ClaudeService()
+            ClaudeService(executablePath: type.executablePath)
         case .codex:
-            CodexService()
+            CodexService(executablePath: type.executablePath)
         }
     }
 }

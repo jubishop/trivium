@@ -1,17 +1,27 @@
 import Foundation
 
 final class CodexService: AgentService, @unchecked Sendable {
-    private static let binaryPath = "/opt/homebrew/bin/codex"
-
+    private let executablePath: String?
     private var currentProcess: Process?
     private let lock = NSLock()
+
+    init(executablePath: String?) {
+        self.executablePath = executablePath
+    }
 
     func send(prompt: String, sessionID: String?, workingDirectory: String) -> AsyncStream<StreamEvent> {
         cancel()
 
         return AsyncStream { continuation in
+            guard let executablePath = self.executablePath else {
+                continuation.yield(.error("Codex CLI not found. \(AgentType.codex.executableLookupHint)"))
+                continuation.yield(.done)
+                continuation.finish()
+                return
+            }
+
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: Self.binaryPath)
+            process.executableURL = URL(fileURLWithPath: executablePath)
             process.environment = AgentType.processEnvironment
 
             var args: [String]
@@ -38,7 +48,7 @@ final class CodexService: AgentService, @unchecked Sendable {
             process.arguments = args
             process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
 
-            Log.info("[Codex] Launching: \(Self.binaryPath) \(args.joined(separator: " "))")
+            Log.info("[Codex] Launching: \(executablePath) \(args.joined(separator: " "))")
             Log.info("[Codex] cwd: \(workingDirectory)")
 
             let stdout = Pipe()
@@ -51,19 +61,11 @@ final class CodexService: AgentService, @unchecked Sendable {
             currentProcess = process
             lock.unlock()
 
+            let lifecycle = ProcessStreamCoordinator(label: "Codex", continuation: continuation)
+
             process.terminationHandler = { [weak self] proc in
                 Log.info("[Codex] Process terminated with code \(proc.terminationStatus)")
-                if proc.terminationStatus != 0 {
-                    let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-                    let errStr = String(data: errData, encoding: .utf8) ?? "exit code \(proc.terminationStatus)"
-                    let trimmed = errStr.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty {
-                        Log.error("[Codex] stderr: \(trimmed)")
-                        continuation.yield(.error(trimmed))
-                    }
-                }
-                continuation.yield(.done)
-                continuation.finish()
+                lifecycle.markTerminated(status: proc.terminationStatus)
 
                 self?.lock.lock()
                 if self?.currentProcess === proc {
@@ -129,6 +131,14 @@ final class CodexService: AgentService, @unchecked Sendable {
                     }
                 }
                 Log.info("[Codex] stdout stream ended")
+                lifecycle.markStdoutFinished()
+            }
+
+            Task.detached {
+                for await line in StreamParser.lines(from: stderr.fileHandleForReading) {
+                    lifecycle.appendStderrLine(line)
+                }
+                lifecycle.markStderrFinished()
             }
         }
     }

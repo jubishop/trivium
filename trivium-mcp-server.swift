@@ -3,9 +3,25 @@
 // Trivium MCP Server (Global)
 // A single MCP server that routes group chat messages by directory.
 // Each tool call includes a `directory` param to scope the chat log.
-// Chat logs are stored at /tmp/trivium/chats/<hash>/group-chat.jsonl
+// Chat logs are stored under ~/Library/Application Support/Trivium/chats/<hash>/group-chat.jsonl
 
+import Darwin
 import Foundation
+
+let maxRetainedMessages = 2_000
+let maxChatLogSizeBytes = 2_000_000
+
+func chatStorageRoot() -> String {
+    if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+        let root = appSupport.appendingPathComponent("Trivium", isDirectory: true).path
+        try? FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
+        return root
+    }
+
+    let fallback = NSHomeDirectory() + "/Library/Application Support/Trivium"
+    try? FileManager.default.createDirectory(atPath: fallback, withIntermediateDirectories: true)
+    return fallback
+}
 
 func chatLogPath(for directory: String) -> String {
     let normalized = (directory as NSString).standardizingPath
@@ -13,14 +29,14 @@ func chatLogPath(for directory: String) -> String {
         hash = hash &* 33 &+ UInt64(byte)
     }
     let hash = String(hashValue, radix: 16)
-    let dir = "/tmp/trivium/chats/\(hash)"
+    let dir = chatStorageRoot() + "/chats/\(hash)"
     try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
     return dir + "/group-chat.jsonl"
 }
 
 struct JSONRPCRequest: Decodable {
     let jsonrpc: String
-    let id: Int?
+    let id: AnyCodable?
     let method: String
     let params: AnyCodable?
 }
@@ -34,10 +50,12 @@ struct AnyCodable: Decodable {
             value = dict.mapValues { $0.value }
         } else if let arr = try? container.decode([AnyCodable].self) {
             value = arr.map { $0.value }
-        } else if let str = try? container.decode(String.self) {
-            value = str
+        } else if let int = try? container.decode(Int.self) {
+            value = int
         } else if let num = try? container.decode(Double.self) {
             value = num
+        } else if let str = try? container.decode(String.self) {
+            value = str
         } else if let bool = try? container.decode(Bool.self) {
             value = bool
         } else if container.decodeNil() {
@@ -48,29 +66,78 @@ struct AnyCodable: Decodable {
     }
 }
 
-func respond(id: Int?, result: Any) {
-    let response: [String: Any] = [
-        "jsonrpc": "2.0",
-        "id": id as Any,
-        "result": result,
-    ]
-    if let data = try? JSONSerialization.data(withJSONObject: response),
-       let str = String(data: data, encoding: .utf8) {
-        print(str)
-        fflush(stdout)
+final class StdioTransport {
+    private let input = FileHandle.standardInput
+    private let output = FileHandle.standardOutput
+    private var buffer = Data()
+    private let headerDelimiter = Data("\r\n\r\n".utf8)
+
+    func readMessage() -> Data? {
+        while true {
+            if let headerRange = buffer.range(of: headerDelimiter),
+               let contentLength = parseContentLength(from: buffer[..<headerRange.lowerBound]) {
+                let bodyStart = headerRange.upperBound
+                let availableBodyBytes = buffer.count - bodyStart
+
+                if availableBodyBytes >= contentLength {
+                    let bodyRange = bodyStart..<(bodyStart + contentLength)
+                    let body = buffer.subdata(in: bodyRange)
+                    buffer.removeSubrange(..<bodyRange.upperBound)
+                    return body
+                }
+            }
+
+            guard let chunk = try? input.read(upToCount: 4096),
+                  !chunk.isEmpty else {
+                return nil
+            }
+
+            buffer.append(chunk)
+        }
+    }
+
+    func writeMessage(_ message: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: message) else { return }
+        let header = "Content-Length: \(data.count)\r\n\r\n"
+        output.write(Data(header.utf8))
+        output.write(data)
+    }
+
+    private func parseContentLength(from headerData: Data.SubSequence) -> Int? {
+        guard let headerText = String(data: Data(headerData), encoding: .utf8) else { return nil }
+
+        for line in headerText.components(separatedBy: "\r\n") {
+            let parts = line.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+
+            let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if key == "content-length" {
+                return Int(parts[1].trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
+
+        return nil
     }
 }
 
-func handleInitialize(id: Int?) {
-    respond(id: id, result: [
+func respond(transport: StdioTransport, id: Any?, result: Any) {
+    transport.writeMessage([
+        "jsonrpc": "2.0",
+        "id": id ?? NSNull(),
+        "result": result,
+    ])
+}
+
+func handleInitialize(transport: StdioTransport, id: Any?) {
+    respond(transport: transport, id: id, result: [
         "protocolVersion": "2024-11-05",
         "capabilities": ["tools": ["listChanged": false]],
         "serverInfo": ["name": "trivium-group-chat", "version": "2.0.0"],
     ] as [String: Any])
 }
 
-func handleToolsList(id: Int?) {
-    respond(id: id, result: [
+func handleToolsList(transport: StdioTransport, id: Any?) {
+    respond(transport: transport, id: id, result: [
         "tools": [
             [
                 "name": "get_group_chat",
@@ -116,15 +183,16 @@ func handleToolsList(id: Int?) {
     ])
 }
 
-func handleToolCall(id: Int?, params: [String: Any]?) {
+func handleToolCall(transport: StdioTransport, id: Any?, params: [String: Any]?) {
     guard let name = params?["name"] as? String else {
-        respond(id: id, result: ["content": [["type": "text", "text": "Error: missing tool name"]]])
+        respond(transport: transport, id: id, result: ["content": [["type": "text", "text": "Error: missing tool name"]]])
         return
     }
+
     let args = params?["arguments"] as? [String: Any] ?? [:]
 
     guard let directory = args["directory"] as? String else {
-        respond(id: id, result: [
+        respond(transport: transport, id: id, result: [
             "content": [["type": "text", "text": "Error: 'directory' argument is required"]],
         ])
         return
@@ -134,24 +202,27 @@ func handleToolCall(id: Int?, params: [String: Any]?) {
 
     switch name {
     case "get_group_chat":
-        let lastN = (args["last_n"] as? Int) ?? 50
+        let lastN = (args["last_n"] as? Int)
+            ?? (args["last_n"] as? Double).map(Int.init)
+            ?? 50
         let messages = readChatLog(path: logPath, lastN: lastN)
         let text = messages.isEmpty
             ? "No group chat messages yet for \(directory)."
             : messages.joined(separator: "\n")
-        respond(id: id, result: ["content": [["type": "text", "text": text]]])
+        respond(transport: transport, id: id, result: ["content": [["type": "text", "text": text]]])
 
     case "send_to_group_chat":
         guard let message = args["message"] as? String else {
-            respond(id: id, result: ["content": [["type": "text", "text": "Error: missing 'message'"]]])
+            respond(transport: transport, id: id, result: ["content": [["type": "text", "text": "Error: missing 'message'"]]])
             return
         }
+
         let senderName = (args["your_name"] as? String) ?? "agent"
         appendToChatLog(path: logPath, sender: senderName, text: message)
-        respond(id: id, result: ["content": [["type": "text", "text": "Message posted to group chat."]]])
+        respond(transport: transport, id: id, result: ["content": [["type": "text", "text": "Message posted to group chat."]]])
 
     default:
-        respond(id: id, result: ["content": [["type": "text", "text": "Error: unknown tool '\(name)'"]]])
+        respond(transport: transport, id: id, result: ["content": [["type": "text", "text": "Error: unknown tool '\(name)'"]]])
     }
 }
 
@@ -179,36 +250,76 @@ func appendToChatLog(path: String, sender: String, text: String) {
     guard let data = try? JSONSerialization.data(withJSONObject: entry),
           let line = String(data: data, encoding: .utf8) else { return }
 
-    let lineData = Data((line + "\n").utf8)
+    let directory = (path as NSString).deletingLastPathComponent
+    try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+
     if !FileManager.default.fileExists(atPath: path) {
         FileManager.default.createFile(atPath: path, contents: nil)
     }
+
     guard let handle = FileHandle(forWritingAtPath: path) else { return }
-    handle.seekToEndOfFile()
-    handle.write(lineData)
-    try? handle.close()
+    let fd = handle.fileDescriptor
+
+    guard flock(fd, LOCK_EX) == 0 else {
+        try? handle.close()
+        return
+    }
+
+    defer {
+        flock(fd, LOCK_UN)
+        try? handle.close()
+    }
+
+    handle.seek(toFileOffset: 0)
+    let existingData = handle.readDataToEndOfFile()
+    let updatedData = compactedChatLogData(appending: line, existingData: existingData)
+
+    try? handle.truncate(atOffset: 0)
+    handle.seek(toFileOffset: 0)
+    handle.write(updatedData)
 }
 
-// Main loop
-while let line = readLine(strippingNewline: true) {
-    guard !line.isEmpty,
-          let data = line.data(using: .utf8),
-          let request = try? JSONDecoder().decode(JSONRPCRequest.self, from: data) else {
+func compactedChatLogData(appending line: String, existingData: Data) -> Data {
+    var lines = String(data: existingData, encoding: .utf8)?
+        .components(separatedBy: .newlines)
+        .filter { !$0.isEmpty } ?? []
+
+    lines.append(line)
+    if lines.count > maxRetainedMessages {
+        lines = Array(lines.suffix(maxRetainedMessages))
+    }
+
+    var data = Data((lines.joined(separator: "\n") + "\n").utf8)
+    while data.count > maxChatLogSizeBytes, lines.count > 1 {
+        let trimCount = min(max(lines.count / 10, 1), lines.count - 1)
+        lines.removeFirst(trimCount)
+        data = Data((lines.joined(separator: "\n") + "\n").utf8)
+    }
+
+    return data
+}
+
+let transport = StdioTransport()
+
+while let data = transport.readMessage() {
+    guard let request = try? JSONDecoder().decode(JSONRPCRequest.self, from: data) else {
         continue
     }
 
+    let requestID = request.id?.value
+
     switch request.method {
     case "initialize":
-        handleInitialize(id: request.id)
+        handleInitialize(transport: transport, id: requestID)
     case "notifications/initialized":
         break
     case "tools/list":
-        handleToolsList(id: request.id)
+        handleToolsList(transport: transport, id: requestID)
     case "tools/call":
-        handleToolCall(id: request.id, params: request.params?.value as? [String: Any])
+        handleToolCall(transport: transport, id: requestID, params: request.params?.value as? [String: Any])
     default:
-        if request.id != nil {
-            respond(id: request.id, result: ["error": "Unknown method: \(request.method)"])
+        if requestID != nil {
+            respond(transport: transport, id: requestID, result: ["error": "Unknown method: \(request.method)"])
         }
     }
 }

@@ -6,7 +6,7 @@ Multi-agent group chat app (macOS/SwiftUI) that lets you, Claude, and Codex talk
 
 - **Group chat view** where you @mention agents (`@Claude`, `@Codex`) and they respond via their respective CLIs
 - **MCP server** (`trivium-mcp-server`) lets external Claude/Codex sessions read and write to the group chat — one global server, directory-scoped via a `directory` param on every tool call
-- **Directory-scoped**: launch with `bin/trivium [dir]` to get a chat room for that project. Chat logs live at `/tmp/trivium/chats/<hash>/`
+- **Directory-scoped**: launch with `bin/trivium [dir]` to get a chat room for that project. Chat logs and session IDs live under `~/Library/Application Support/Trivium/chats/<hash>/`
 - **Session persistence**: Claude/Codex session IDs saved to disk so conversations survive app restarts
 
 ## Architecture
@@ -48,4 +48,4 @@ Agents pass their cwd as `directory` param on every tool call.
 - `@Observable @MainActor` on all view models and state
 - `@unchecked Sendable` on services that use `NSLock` internally
 - No doc comments — use `//` only where logic isn't obvious
-- Logs go to `/tmp/trivium/logs/trivium.log`
+- Logs go to `~/Library/Logs/Trivium/trivium.log` and rotate at 1 MB

@@ -41,12 +41,15 @@ Trivium includes an MCP server that lets your standalone Claude Code or Codex CL
 
 Then from any terminal session, the agent can call `get_group_chat` to read what's been discussed, or `send_to_group_chat` to post a message. Everything is scoped by directory — the agent passes its working directory and messages route to the right chat room.
 
+Chat logs and session IDs are stored under `~/Library/Application Support/Trivium/`. Chat transcripts are compacted to a bounded size, and the app log rotates at 1 MB.
+
 ## Requirements
 
 - macOS 15.0+
 - Xcode 16+
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (`claude`)
 - [Codex CLI](https://github.com/openai/codex) (`codex`)
+- Optional overrides: `TRIVIUM_CLAUDE_PATH`, `TRIVIUM_CODEX_PATH`
 
 ## Project structure
 

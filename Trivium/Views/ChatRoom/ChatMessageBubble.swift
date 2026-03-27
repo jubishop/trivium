@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ChatMessageBubble: View {
+    @Environment(AppState.self) private var appState
     let message: Message
     let agentName: String?
     let agentColor: Color
@@ -26,6 +27,7 @@ struct ChatMessageBubble: View {
                 .foregroundStyle(.secondary)
 
             Text(message.text)
+                .font(.system(size: appState.fontSize))
                 .padding(10)
                 .background(.blue.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
                 .textSelection(.enabled)
@@ -50,6 +52,7 @@ struct ChatMessageBubble: View {
             }
 
             Text(message.text.isEmpty && message.isStreaming ? "..." : message.text)
+                .font(.system(size: appState.fontSize))
                 .padding(10)
                 .background(agentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
                 .textSelection(.enabled)
