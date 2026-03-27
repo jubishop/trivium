@@ -82,5 +82,6 @@ struct TriviumApp: App {
         appState.groupChatLogger.startWatching { sender, text in
             appState.receiveExternalGroupMessage(sender: sender, text: text)
         }
+        appState.startPermissionFileWatcher()
     }
 }

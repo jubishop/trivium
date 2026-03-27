@@ -4,10 +4,11 @@ import Foundation
 @MainActor
 final class AgentCoordinator {
     let config: AgentConfig
-    private let service: any AgentService
+    let service: any AgentService
     private(set) var sessionID: String?
     private(set) var fullHistory: [TaggedMessage] = []
     private var currentTask: Task<Void, Never>?
+    var onPermissionRequest: ((PermissionRequest) -> Void)?
 
     var workingDirectory: String = NSHomeDirectory() + "/Desktop/trivium"
 
@@ -68,6 +69,24 @@ final class AgentCoordinator {
                     if !receivedText {
                         responseMessage.text = full
                     }
+
+                case .toolUseStarted(_, let name):
+                    if !responseMessage.text.isEmpty {
+                        responseMessage.text += "\n\n"
+                    }
+                    responseMessage.text += "> Using \(name)...\n"
+                    receivedText = true
+                    config.status = .processing
+
+                case .permissionRequested(let id, let tool, let input):
+                    config.status = .awaitingPermission
+                    let request = PermissionRequest(
+                        id: id,
+                        agentID: config.id,
+                        toolName: tool,
+                        toolInput: input
+                    )
+                    self.onPermissionRequest?(request)
 
                 case .error(let err):
                     if responseMessage.text.isEmpty {

@@ -7,3 +7,6 @@ REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 swiftc -o "$REPO_ROOT/trivium-mcp-server" "$REPO_ROOT/trivium-mcp-server.swift"
 echo "** MCP SERVER BUILD SUCCEEDED **"
+
+swiftc -o "$REPO_ROOT/trivium-permission-hook" "$REPO_ROOT/trivium-permission-hook.swift"
+echo "** PERMISSION HOOK BUILD SUCCEEDED **"

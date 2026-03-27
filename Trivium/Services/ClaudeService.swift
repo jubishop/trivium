@@ -4,9 +4,15 @@ final class ClaudeService: AgentService, @unchecked Sendable {
     private let executablePath: String?
     private var currentProcess: Process?
     private let lock = NSLock()
+    var permissionsDir: String?
 
     init(executablePath: String?) {
         self.executablePath = executablePath
+    }
+
+    func respondToPermission(requestID: String, granted: Bool) {
+        // Claude permissions go through file IPC, not the process stdin.
+        // PermissionFileWatcher handles writing the response file.
     }
 
     func send(prompt: String, sessionID: String?, workingDirectory: String) -> AsyncStream<StreamEvent> {
@@ -22,13 +28,25 @@ final class ClaudeService: AgentService, @unchecked Sendable {
 
             let process = Process()
             process.executableURL = URL(fileURLWithPath: executablePath)
-            process.environment = AgentType.processEnvironment
+
+            var env = AgentType.processEnvironment
+            if let permissionsDir = self.permissionsDir {
+                env["TRIVIUM_PERMISSIONS_DIR"] = permissionsDir
+            }
+            process.environment = env
 
             var args = [
                 "-p",
                 "--output-format", "stream-json",
                 "--include-partial-messages",
             ]
+
+            // Configure PreToolUse hook for permission handling
+            let hookBinaryPath = self.hookBinaryPath
+            if FileManager.default.isExecutableFile(atPath: hookBinaryPath), self.permissionsDir != nil {
+                let settingsJSON = "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"\",\"hooks\":[{\"type\":\"command\",\"command\":\"\(hookBinaryPath)\"}]}]}}"
+                args.append(contentsOf: ["--settings", settingsJSON])
+            }
 
             if let sessionID {
                 args.append(contentsOf: ["--resume", sessionID])
@@ -99,7 +117,13 @@ final class ClaudeService: AgentService, @unchecked Sendable {
                               let eventType = event["type"] as? String else { continue }
 
                         if eventType == "content_block_start" {
-                            // New text block after a tool use -- add separation
+                            if let contentBlock = event["content_block"] as? [String: Any],
+                               let blockType = contentBlock["type"] as? String,
+                               blockType == "tool_use",
+                               let toolID = contentBlock["id"] as? String,
+                               let toolName = contentBlock["name"] as? String {
+                                continuation.yield(.toolUseStarted(id: toolID, name: toolName))
+                            }
                             if !fullText.isEmpty {
                                 fullText += "\n\n"
                                 continuation.yield(.textDelta("\n\n"))
@@ -154,5 +178,16 @@ final class ClaudeService: AgentService, @unchecked Sendable {
             Log.info("[Claude] Cancelling process pid=\(proc.processIdentifier)")
             proc.terminate()
         }
+    }
+
+    private var hookBinaryPath: String {
+        // Look next to the MCP server binary first, then fall back to repo root
+        let candidates = [
+            Bundle.main.bundlePath + "/../trivium-permission-hook",
+            (Bundle.main.bundlePath as NSString).deletingLastPathComponent + "/trivium-permission-hook",
+            NSHomeDirectory() + "/Desktop/trivium/trivium-permission-hook",
+        ]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+            ?? "trivium-permission-hook"
     }
 }

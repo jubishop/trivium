@@ -14,10 +14,13 @@ final class AppState {
     var chatRoom = Conversation()
     var fontSize: CGFloat = 14
     let groupChatLogger: GroupChatLogger
+    let permissionFileWatcher: PermissionFileWatcher
+    var pendingPermissions: [PermissionRequest] = []
 
     init(directory: String) {
         self.directory = directory
         self.groupChatLogger = GroupChatLogger(directory: directory)
+        self.permissionFileWatcher = PermissionFileWatcher(directory: directory)
     }
 
     func addAgent(name: String, type: AgentType) -> AgentConfig {
@@ -26,6 +29,17 @@ final class AppState {
         let coordinator = AgentCoordinator(config: agent)
         coordinator.workingDirectory = directory
         coordinator.loadSessionID()
+
+        // Set up permissions dir for Claude's hook
+        if let claudeService = coordinator.service as? ClaudeService {
+            claudeService.permissionsDir = permissionFileWatcher.permissionsDir
+        }
+
+        // Wire permission requests from both agent types to AppState
+        coordinator.onPermissionRequest = { [weak self] request in
+            self?.receivePermissionRequest(request)
+        }
+
         coordinators[agent.id] = coordinator
         return agent
     }
@@ -120,5 +134,68 @@ final class AppState {
 
             self.handleCompletedAgentResponse(message, from: agentID)
         }
+    }
+
+    // MARK: - Permissions
+
+    func receivePermissionRequest(_ request: PermissionRequest) {
+        pendingPermissions.append(request)
+    }
+
+    func approvePermission(_ id: String) {
+        guard let request = pendingPermissions.first(where: { $0.id == id }) else { return }
+        request.status = .approved
+        pendingPermissions.removeAll { $0.id == id }
+
+        let agentConfig = agent(withID: request.agentID)
+        agentConfig?.status = .processing
+
+        // Route the response to the correct mechanism
+        if let coordinator = coordinator(for: request.agentID) {
+            if coordinator.config.type == .claude {
+                // Claude uses file-based IPC
+                permissionFileWatcher.writeResponse(id: id, granted: true)
+            } else {
+                // Codex uses JSON-RPC via stdin
+                coordinator.service.respondToPermission(requestID: id, granted: true)
+            }
+        }
+    }
+
+    func denyPermission(_ id: String) {
+        guard let request = pendingPermissions.first(where: { $0.id == id }) else { return }
+        request.status = .denied
+        pendingPermissions.removeAll { $0.id == id }
+
+        let agentConfig = agent(withID: request.agentID)
+        agentConfig?.status = .processing
+
+        if let coordinator = coordinator(for: request.agentID) {
+            if coordinator.config.type == .claude {
+                permissionFileWatcher.writeResponse(id: id, granted: false)
+            } else {
+                coordinator.service.respondToPermission(requestID: id, granted: false)
+            }
+        }
+    }
+
+    func startPermissionFileWatcher() {
+        permissionFileWatcher.startWatching { [weak self] id, toolName, toolInput, _ in
+            guard let self else { return }
+            // Find which Claude agent this is for (use the first Claude agent)
+            let claudeAgent = self.agents.first { $0.type == .claude }
+            let agentID = claudeAgent?.id ?? UUID()
+            let request = PermissionRequest(
+                id: id,
+                agentID: agentID,
+                toolName: toolName,
+                toolInput: toolInput
+            )
+            self.receivePermissionRequest(request)
+        }
+    }
+
+    func pendingPermission(for agentID: UUID) -> PermissionRequest? {
+        pendingPermissions.first { $0.agentID == agentID }
     }
 }

@@ -46,8 +46,14 @@ struct ChatMessageBubble: View {
                     .foregroundStyle(.secondary)
 
                 if message.isStreaming {
-                    ProgressView()
-                        .controlSize(.mini)
+                    if pendingPermission != nil {
+                        Image(systemName: "lock.shield")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    } else {
+                        ProgressView()
+                            .controlSize(.mini)
+                    }
                 }
             }
 
@@ -57,6 +63,15 @@ struct ChatMessageBubble: View {
                 .background(agentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
                 .textSelection(.enabled)
                 .foregroundStyle(message.isError ? .red : .primary)
+
+            if let request = pendingPermission {
+                PermissionRequestView(request: request, agentColor: agentColor)
+            }
         }
+    }
+
+    private var pendingPermission: PermissionRequest? {
+        guard message.isStreaming, case .agent(let agentID) = message.sender else { return nil }
+        return appState.pendingPermission(for: agentID)
     }
 }

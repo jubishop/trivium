@@ -14,6 +14,7 @@ struct StatusIndicator: View {
         case .disconnected: .gray
         case .idle: .green
         case .processing: .orange
+        case .awaitingPermission: .yellow
         case .error: .red
         }
     }
